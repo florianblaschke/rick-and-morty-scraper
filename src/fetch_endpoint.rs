@@ -1,0 +1,72 @@
+use std::{collections::HashMap, fs, time::Instant};
+
+use anyhow::Result;
+use futures::future::try_join_all;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Debug, Deserialize)]
+struct Info {
+    count: i64,
+    pages: i64,
+    next: Option<String>,
+    prev: Option<String>,
+}
+
+#[derive(Serialize, Debug, Deserialize)]
+struct ResultWithId {
+    id: u64,
+    #[serde(flatten)]
+    data: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Serialize, Debug, Deserialize)]
+struct ApiResult {
+    info: Info,
+    results: Vec<ResultWithId>,
+}
+
+pub async fn fetch_endpoint(endpoint: &str) -> Result<()> {
+    let mut threads = Vec::new();
+    let constructed_endpoint = format!("https://rickandmortyapi.com/api/{}", endpoint);
+
+    let start = Instant::now();
+    let pages = reqwest::get(constructed_endpoint.clone())
+        .await?
+        .json::<ApiResult>()
+        .await?
+        .info
+        .pages;
+
+    for page in 1..=pages {
+        let cloned_endpoint = constructed_endpoint.clone();
+        let task = tokio::spawn(async move {
+            let res = reqwest::get(format!("{}?page={}", cloned_endpoint, page))
+                .await?
+                .json::<ApiResult>()
+                .await?
+                .results;
+
+            Ok::<Vec<ResultWithId>, anyhow::Error>(res)
+        });
+        threads.push(task);
+    }
+
+    let mut all_characters = try_join_all(threads)
+        .await?
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .flatten()
+        .collect::<Vec<ResultWithId>>();
+
+    all_characters.sort_by_key(|character| character.id);
+
+    let _res = fs::write(
+        format!("src/{}.json", endpoint),
+        serde_json::to_string(&all_characters).unwrap(),
+    );
+
+    let finish = Instant::now();
+    println!("{endpoint} took: {:?}", finish - start);
+
+    Ok(())
+}
