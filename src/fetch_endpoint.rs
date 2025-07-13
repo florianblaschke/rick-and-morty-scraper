@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Debug, Deserialize)]
 struct Info {
-    count: i64,
-    pages: i64,
+    count: u64,
+    pages: u64,
     next: Option<String>,
     prev: Option<String>,
 }
