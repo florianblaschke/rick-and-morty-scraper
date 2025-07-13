@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, time::Instant};
+use std::{cmp::Ordering, collections::HashMap, fs, time::Instant};
 
 use anyhow::Result;
 use futures::future::try_join_all;
@@ -12,7 +12,7 @@ struct Info {
     prev: Option<String>,
 }
 
-#[derive(Serialize, Debug, Deserialize)]
+#[derive(Serialize, Debug, Deserialize, Eq, PartialEq)]
 struct ResultWithId {
     id: u64,
     #[serde(flatten)]
@@ -23,6 +23,18 @@ struct ResultWithId {
 struct ApiResult {
     info: Info,
     results: Vec<ResultWithId>,
+}
+
+impl PartialOrd for ResultWithId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ResultWithId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.id.cmp(&other.id)
+    }
 }
 
 pub async fn fetch_endpoint(endpoint: &str) -> Result<()> {
@@ -58,7 +70,7 @@ pub async fn fetch_endpoint(endpoint: &str) -> Result<()> {
         .flatten()
         .collect::<Vec<ResultWithId>>();
 
-    all_characters.sort_by_key(|character| character.id);
+    all_characters.sort_unstable();
 
     let _res = fs::write(
         format!("src/{}.json", endpoint),
